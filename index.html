@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sophia – Heart Viewer</title>
+<style>
+  body{margin:0;overflow:hidden;font:14px/1 Arial,Helvetica,sans-serif}
+  #ui{
+    position:fixed;top:10px;left:10px;z-index:10;
+    background:rgba(255,255,255,.92);padding:12px;border-radius:6px;
+  }
+  #ui label{display:block;margin-bottom:4px}
+  #ui input[type=range]{width:160px}
+  #info{
+    position:fixed;bottom:10px;left:10px;right:10px;z-index:10;
+    background:rgba(255,255,255,.9);padding:10px;border-radius:6px;
+    max-width:420px;
+  }
+  #info h4{margin:0 0 6px 0}
+</style>
+
+<script type="importmap">
+{ "imports": {
+    "three"     : "https://cdn.jsdelivr.net/npm/three@0.148.0/build/three.module.js",
+    "OBJLoader" : "https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/loaders/OBJLoader.js",
+    "MTLLoader" : "https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/loaders/MTLLoader.js"
+} }
+</script>
+</head>
+<body>
+
+<!-- Controls -->
+<div id="ui">
+  <button id="bgBtn">BG: white</button>
+  <label><input id="showWall"   type="checkbox"> Show heart wall</label>
+  <label><input id="showLumen"  type="checkbox" checked> Show lumen</label>
+  <label><input id="showHelpers"type="checkbox"> Show slice helpers</label>
+  <label><input id="enableClip" type="checkbox" checked> Enable clipping</label>
+  <label><input id="enableLight"type="checkbox"> Lighting on</label>
+  <label>Lumen opacity  <input type="range" id="opacity"   min="0" max="1"   step="0.01" value="0.25"></label>
+  <label>Light intensity<input type="range" id="lightInt"  min="0" max="2"   step="0.05" value="0.8"></label>
+  <label>Light direction<input type="range" id="lightDir"  min="0" max="360" step="1"    value="45"></label><hr>
+  <label>Axial   Min<input type="range" id="axMin"></label>
+  <label>Axial   Max<input type="range" id="axMax"></label>
+  <label>Coronal Min<input type="range" id="corMin"></label>
+  <label>Coronal Max<input type="range" id="corMax"></label>
+  <label>Sagittal Min<input type="range" id="sagMin"></label>
+  <label>Sagittal Max<input type="range" id="sagMax"></label>
+</div>
+
+<!-- Comment / instructions -->
+<div id="info">
+  <h4>Sophia’s heart (age 1, cardiac CT)</h4>
+  <p><strong>Blue lumen</strong> shows the negative space inside the
+  chambers and vessels.<br>
+  <strong>Red wall</strong> renders only the inner &amp; outer shells of the
+  myocardium (solid tissue between shells is not displayed).</p>
+
+  <p><em>Recommended workflow for surgical planning</em>:</p>
+  <ol style="margin-left:16px">
+    <li>Toggle <strong>off</strong> the heart wall.</li>
+    <li>Slice through the lumen (axial/ coronal/ sagittal)
+        with the sliders.</li>
+    <li>Keep lighting off and set lumen opacity to&nbsp;≈ 25&nbsp;% for a
+        clear overview of all chambers at once.</li>
+  </ol>
+</div>
+
+<script type="module">
+/* ---------- imports ---------- */
+import * as THREE from 'three';
+import { OrbitControls } from
+  'https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/controls/OrbitControls.js';
+import { STLLoader } from
+  'https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/loaders/STLLoader.js';
+import { MTLLoader } from 'MTLLoader';
+import { OBJLoader } from 'OBJLoader';
+
+/* ---------- scene / renderer ---------- */
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0xffffff);
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 5000);
+camera.up.set(0,0,1);
+
+const renderer = new THREE.WebGLRenderer({antialias:true, stencil:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+renderer.localClippingEnabled = true;
+
+/* ---------- controls ---------- */
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+/* ---------- clipping planes ---------- */
+const planes = {
+  axMin : new THREE.Plane(new THREE.Vector3( 0, 0,-1), 0),
+  axMax : new THREE.Plane(new THREE.Vector3( 0, 0, 1), 0),
+  corMin: new THREE.Plane(new THREE.Vector3( 0,-1, 0), 0),
+  corMax: new THREE.Plane(new THREE.Vector3( 0, 1, 0), 0),
+  sagMin: new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0),
+  sagMax: new THREE.Plane(new THREE.Vector3( 1, 0, 0), 0)
+};
+const clipArray = Object.values(planes);
+renderer.clippingPlanes = clipArray;
+
+/* ---------- light ---------- */
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.visible = false;                     // lighting off by default
+scene.add(dirLight);
+
+/* ---------- materials ---------- */
+const shared = { roughness:1, metalness:0, side:THREE.DoubleSide,
+                 transparent:true, clipIntersection:true,
+                 clippingPlanes:clipArray };
+const matWall  = new THREE.MeshStandardMaterial({ ...shared, color:0xc23b22, opacity:0.9 });
+const matLumen = new THREE.MeshStandardMaterial({ ...shared, color:0x4fa7ff, opacity:0.25, depthWrite:false });
+
+/* ---------- load and align meshes ---------- */
+const TARGET = 100;
+let lumenMesh, wallMesh, scaleFactor, centre;
+
+new STLLoader().load('Segmentation_Sophia_1yr_old_lumen.stl', geo=>{
+  ({scaleFactor,centre} = normalise(geo));
+  lumenMesh = new THREE.Mesh(geo, matLumen);
+  scene.add(lumenMesh);
+  loadWall();
+});
+function loadWall(){
+  new MTLLoader().load('Segmentation_Sophia_1yr_old_HeartWall.mtl', m=>{
+    m.preload();
+    new OBJLoader().setMaterials(m).load('Segmentation_Sophia_1yr_old_HeartWall.obj', obj=>{
+      obj.traverse(c=>{
+        if(c.isMesh){
+          c.geometry.scale(scaleFactor,scaleFactor,scaleFactor);
+          c.geometry.translate(-centre.x,-centre.y,-centre.z);
+          c.material = matWall;
+        }
+      });
+      wallMesh = obj; wallMesh.visible = false; // hidden by default
+      scene.add(wallMesh);
+      initScene();
+    });
+  });
+}
+function normalise(geo){
+  geo.computeBoundingBox();
+  const s=geo.boundingBox.getSize(new THREE.Vector3());
+  const factor = TARGET / Math.max(s.x,s.y,s.z);
+  geo.scale(factor,factor,factor);
+  geo.computeBoundingBox();
+  const c=geo.boundingBox.getCenter(new THREE.Vector3());
+  geo.translate(-c.x,-c.y,-c.z);
+  return {scaleFactor:factor, centre:c};
+}
+
+/* ---------- helpers, sliders, UI ---------- */
+const helpers={}, helperColor={axMin:0xff3333,axMax:0xff9999,
+                               corMin:0x33ff33,corMax:0x99ff99,
+                               sagMin:0x3333ff,sagMax:0x9999ff};
+function initScene(){
+  const bbox=new THREE.Box3().expandByObject(wallMesh).expandByObject(lumenMesh);
+  const size=bbox.getSize(new THREE.Vector3());
+  frameCamera(size); createHelpers(size); initSliders(size); bindUI();
+}
+function frameCamera(sizeVec){
+  const R=Math.hypot(sizeVec.x,sizeVec.y,sizeVec.z)/2;
+  camera.position.set(0,0,R*2.5);
+  controls.target.set(0,0,0);
+  controls.minDistance=R*0.4; controls.maxDistance=R*6; controls.update();
+  updateLightDir();
+}
+function createHelpers(sizeVec){
+  const len=Math.hypot(sizeVec.x,sizeVec.y,sizeVec.z)*0.8;
+  Object.entries(planes).forEach(([id,pl])=>{
+    const h=new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.PlaneGeometry(len,len)),
+      new THREE.LineBasicMaterial({color:helperColor[id]}));
+    h.userData.pl=pl; updateHelper(h); h.visible=false; scene.add(h); helpers[id]=h;
+  });
+}
+function updateHelper(h){
+  const p=h.userData.pl,n=p.normal;
+  h.position.copy(n).multiplyScalar(-p.constant);
+  h.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),n);
+}
+function initSliders(sz){
+  const sx=sz.x/2, sy=sz.y/2, sz2=sz.z/2;
+  const ranges={
+    sagMin:[ sx,-sx, sx], sagMax:[ sx,-sx,-sx],
+    corMin:[ sy,-sy, sy], corMax:[ sy,-sy,-sy],
+    axMin :[ sz2,-sz2, sz2], axMax :[ sz2,-sz2,-sz2]
+  };
+  Object.entries(ranges).forEach(([id,[hi,lo,val]])=>{
+    const el=document.getElementById(id);
+    el.min=lo; el.max=hi; el.step=(hi-lo)/400; el.value=val;
+    movePlane(id,val); el.oninput=e=>movePlane(id,parseFloat(e.target.value));
+  });
+}
+function movePlane(id,v){
+  const p=planes[id], n=p.normal;
+  p.constant = n.x? -n.x*v : n.y? -n.y*v : -n.z*v;
+  helpers[id] && updateHelper(helpers[id]);
+}
+
+/* ---------- UI ---------- */
+let bgIndex=1;  // 0:red,1:white,2:black (start white)
+function bindUI(){
+  showWall .onchange=e=>wallMesh && (wallMesh.visible=e.target.checked);
+  showLumen.onchange=e=>lumenMesh&&(lumenMesh.visible=e.target.checked);
+  showHelpers.onchange=e=>Object.values(helpers).forEach(h=>h.visible=e.target.checked);
+  enableClip.onchange=e=>{
+    const arr=e.target.checked?clipArray:[];
+    matWall.clippingPlanes=matLumen.clippingPlanes=arr;
+    matWall.needsUpdate=matLumen.needsUpdate=true;
+  };
+  enableLight.onchange=e=>dirLight.visible=e.target.checked;
+  opacity .oninput=e=>{matLumen.opacity=parseFloat(e.target.value);matLumen.needsUpdate=true;}
+  lightInt.oninput=e=>{dirLight.intensity=parseFloat(e.target.value);}
+  lightDir.oninput=e=>updateLightDir();
+  bgBtn.onclick=()=>{
+    const col=[0xc23b22,0xffffff,0x000000], name=['red','white','black'];
+    bgIndex=(bgIndex+1)%3; scene.background.setHex(col[bgIndex]);
+    bgBtn.textContent=`BG: ${name[bgIndex]}`;
+  };
+}
+function updateLightDir(){
+  const deg=parseFloat(lightDir.value), rad=THREE.MathUtils.degToRad(deg);
+  const r=camera.position.length();
+  dirLight.position.set(Math.cos(rad)*r,Math.sin(rad)*r,r);
+  dirLight.lookAt(0,0,0);
+}
+
+/* ---------- resize + render ---------- */
+window.addEventListener('resize',()=>{
+  renderer.setSize(innerWidth,innerHeight);
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+});
+(function animate(){ requestAnimationFrame(animate);
+  controls.update(); renderer.render(scene,camera); })();
+</script>
+</body>
+</html>
+
+
