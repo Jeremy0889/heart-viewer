@@ -15,12 +15,11 @@
   #info h4{margin:0 0 6px 0}
 </style>
 
-<!-- Import map with GLTFLoader -->
+<!-- Import map: only the loaders we now need -->
 <script type="importmap">
 {
   "imports": {
     "three"         : "https://cdn.jsdelivr.net/npm/three@0.148.0/build/three.module.js",
-    "GLTFLoader"    : "https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/loaders/GLTFLoader.js",
     "STLLoader"     : "https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/loaders/STLLoader.js",
     "OrbitControls" : "https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/controls/OrbitControls.js"
   }
@@ -29,7 +28,7 @@
 </head>
 <body>
 
-<!-- Controls (unchanged) -->
+<!-- Controls -->
 <div id="ui">
   <button id="bgBtn">BG: white</button>
   <label><input id="showWall"   type="checkbox"> Show heart wall</label>
@@ -48,7 +47,7 @@
   <label>Sagittal Max<input type="range" id="sagMax"></label>
 </div>
 
-<!-- Info panel (unchanged) -->
+<!-- Info panel -->
 <div id="info">
   <h4>Sophia’s heart (age 1, cardiac CT)</h4>
   <p><strong>Blue lumen</strong> shows the negative space inside the chambers and vessels.<br>
@@ -65,8 +64,7 @@
 /* ---------- imports ---------- */
 import * as THREE from 'three';
 import { OrbitControls } from 'OrbitControls';
-import { STLLoader   } from 'STLLoader';
-import { GLTFLoader  } from 'GLTFLoader';
+import { STLLoader }     from 'STLLoader';
 
 /* ---------- scene / renderer ---------- */
 const scene = new THREE.Scene(); scene.background = new THREE.Color(0xffffff);
@@ -96,7 +94,7 @@ renderer.clippingPlanes = clipArray;
 
 /* ---------- light ---------- */
 const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-dirLight.visible = false;                         // lighting off by default
+dirLight.visible = false;         // lighting off by default
 scene.add(dirLight);
 
 /* ---------- materials ---------- */
@@ -114,23 +112,16 @@ new STLLoader().load('Segmentation_Sophia_1yr_old_lumen.bin', geo=>{
   ({scaleFactor,centre} = normalise(geo));
   lumenMesh = new THREE.Mesh(geo, matLumen);
   scene.add(lumenMesh);
-  loadWall();                                     // now loads .glb
+  loadWall();
 });
 
+/* ---- STL loader for decimated wall ---- */
 function loadWall(){
-  new GLTFLoader().load('Segmentation_Sophia_1yr_old_HeartWall.glb', gltf=>{
-    wallMesh = gltf.scene;
-
-    /* match lumen transform */
-    wallMesh.scale.set(scaleFactor, scaleFactor, scaleFactor);
-    wallMesh.position.set(-centre.x, -centre.y, -centre.z);
-
-    /* apply shared red material */
-    wallMesh.traverse(c=>{
-      if (c.isMesh) c.material = matWall;
-    });
-
-    wallMesh.visible = false;                     // hidden by default
+  new STLLoader().load('Segmentation_Sophia_1yr_old_HeartWall_decimated.bin', geo=>{
+    geo.scale(scaleFactor, scaleFactor, scaleFactor);
+    geo.translate(-centre.x, -centre.y, -centre.z);
+    wallMesh = new THREE.Mesh(geo, matWall);
+    wallMesh.visible = false;           // hidden by default
     scene.add(wallMesh);
     initScene();
   });
