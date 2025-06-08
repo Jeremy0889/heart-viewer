@@ -5,17 +5,33 @@
 <title>Sophia – Heart Viewer</title>
 <style>
   body{margin:0;overflow:hidden;font:14px/1 Arial,Helvetica,sans-serif}
-  #ui{position:fixed;top:10px;left:10px;z-index:10;
-      background:rgba(255,255,255,.92);padding:12px;border-radius:6px;}
-  #ui label{display:block;margin-bottom:4px}
-  #ui input[type=range]{width:160px}
-  #info{position:fixed;bottom:10px;left:10px;right:10px;z-index:10;
-        background:rgba(255,255,255,.9);padding:10px;border-radius:6px;
-        max-width:420px;}
+
+  /* ── control panel occupies top 30 % ──────────────────────────── */
+  #ui{
+    position:fixed;top:0;left:0;width:100%;height:30vh;overflow-y:auto;
+    z-index:10;background:rgba(255,255,255,.95);
+    padding:12px 14px;border-bottom:1px solid #ccc;
+    display:flex;flex-wrap:wrap;align-content:flex-start;gap:10px 12px;
+  }
+  #ui label{
+    display:flex;align-items:center;gap:8px;
+    margin:0;flex:1 1 48%; /* two columns on phone */
+  }
+  #ui input[type=range]{
+    width:100%;height:28px; /* bigger thumb */
+  }
+  #ui button{padding:6px 10px}
+
+  /* ── info panel unchanged ─────────────────────────────────────── */
+  #info{
+    position:fixed;bottom:10px;left:10px;right:10px;z-index:10;
+    background:rgba(255,255,255,.9);padding:10px;border-radius:6px;
+    max-width:420px;
+  }
   #info h4{margin:0 0 6px 0}
 </style>
 
-<!-- Import map: only the loaders we now need -->
+<!-- Import map -->
 <script type="importmap">
 {
   "imports": {
@@ -28,7 +44,7 @@
 </head>
 <body>
 
-<!-- Controls -->
+<!-- Controls (layout improved) -->
 <div id="ui">
   <button id="bgBtn">BG: white</button>
   <label><input id="showWall"   type="checkbox"> Show heart wall</label>
@@ -36,18 +52,26 @@
   <label><input id="showHelpers"type="checkbox"> Show slice helpers</label>
   <label><input id="enableClip" type="checkbox" checked> Enable clipping</label>
   <label><input id="enableLight"type="checkbox"> Lighting on</label>
-  <label>Lumen opacity  <input type="range" id="opacity"   min="0" max="1"   step="0.01" value="0.25"></label>
-  <label>Light intensity<input type="range" id="lightInt"  min="0" max="2"   step="0.05" value="0.8"></label>
-  <label>Light direction<input type="range" id="lightDir"  min="0" max="360" step="1"    value="45"></label><hr>
-  <label>Axial   Min<input type="range" id="axMin"></label>
-  <label>Axial   Max<input type="range" id="axMax"></label>
-  <label>Coronal Min<input type="range" id="corMin"></label>
-  <label>Coronal Max<input type="range" id="corMax"></label>
-  <label>Sagittal Min<input type="range" id="sagMin"></label>
-  <label>Sagittal Max<input type="range" id="sagMax"></label>
+
+  <label>Lumen opacity
+    <input type="range" id="opacity" min="0" max="1" step="0.01" value="0.25">
+  </label>
+  <label>Light intensity
+    <input type="range" id="lightInt" min="0" max="2" step="0.05" value="0.8">
+  </label>
+  <label>Light direction
+    <input type="range" id="lightDir" min="0" max="360" step="1" value="45">
+  </label>
+
+  <label>Axial Min     <input type="range" id="axMin"></label>
+  <label>Axial Max     <input type="range" id="axMax"></label>
+  <label>Coronal Min   <input type="range" id="corMin"></label>
+  <label>Coronal Max   <input type="range" id="corMax"></label>
+  <label>Sagittal Min  <input type="range" id="sagMin"></label>
+  <label>Sagittal Max  <input type="range" id="sagMax"></label>
 </div>
 
-<!-- Info panel -->
+<!-- Info panel (unchanged) -->
 <div id="info">
   <h4>Sophia’s heart (age 1, cardiac CT)</h4>
   <p><strong>Blue lumen</strong> shows the negative space inside the chambers and vessels.<br>
@@ -64,7 +88,7 @@
 /* ---------- imports ---------- */
 import * as THREE from 'three';
 import { OrbitControls } from 'OrbitControls';
-import { STLLoader }     from 'STLLoader';
+import { STLLoader     } from 'STLLoader';
 
 /* ---------- scene / renderer ---------- */
 const scene = new THREE.Scene(); scene.background = new THREE.Color(0xffffff);
@@ -94,7 +118,7 @@ renderer.clippingPlanes = clipArray;
 
 /* ---------- light ---------- */
 const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-dirLight.visible = false;         // lighting off by default
+dirLight.visible = false;
 scene.add(dirLight);
 
 /* ---------- materials ---------- */
@@ -104,7 +128,7 @@ const shared = { roughness:1, metalness:0, side:THREE.DoubleSide,
 const matWall  = new THREE.MeshStandardMaterial({ ...shared, color:0xc23b22, opacity:0.9 });
 const matLumen = new THREE.MeshStandardMaterial({ ...shared, color:0x4fa7ff, opacity:0.25, depthWrite:false });
 
-/* ---------- load and align meshes ---------- */
+/* ---------- load meshes ---------- */
 const TARGET = 100;
 let lumenMesh, wallMesh, scaleFactor, centre;
 
@@ -115,13 +139,12 @@ new STLLoader().load('Segmentation_Sophia_1yr_old_lumen.bin', geo=>{
   loadWall();
 });
 
-/* ---- STL loader for decimated wall ---- */
 function loadWall(){
   new STLLoader().load('Segmentation_Sophia_1yr_old_HeartWall_decimated.bin', geo=>{
     geo.scale(scaleFactor, scaleFactor, scaleFactor);
     geo.translate(-centre.x, -centre.y, -centre.z);
     wallMesh = new THREE.Mesh(geo, matWall);
-    wallMesh.visible = false;           // hidden by default
+    wallMesh.visible = false;
     scene.add(wallMesh);
     initScene();
   });
@@ -138,7 +161,7 @@ function normalise(geo){
   return {scaleFactor:factor, centre:c};
 }
 
-/* ---------- helpers, sliders, UI (unchanged) ---------- */
+/* ---------- helpers & UI ---------- */
 const helpers={}, helperColor={axMin:0xff3333,axMax:0xff9999,
                                corMin:0x33ff33,corMax:0x99ff99,
                                sagMin:0x3333ff,sagMax:0x9999ff};
@@ -146,6 +169,8 @@ function initScene(){
   const bbox=new THREE.Box3().expandByObject(wallMesh).expandByObject(lumenMesh);
   const size=bbox.getSize(new THREE.Vector3());
   frameCamera(size); createHelpers(size); initSliders(size); bindUI();
+  /* sync helpers to checkbox state */
+  Object.values(helpers).forEach(h => h.visible = showHelpers.checked);
 }
 function frameCamera(sizeVec){
   const R=Math.hypot(sizeVec.x,sizeVec.y,sizeVec.z)/2;
@@ -160,7 +185,7 @@ function createHelpers(sizeVec){
     const h=new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.PlaneGeometry(len,len)),
       new THREE.LineBasicMaterial({color:helperColor[id]}));
-    h.userData.pl=pl; updateHelper(h); h.visible=false; scene.add(h); helpers[id]=h;
+    h.userData.pl=pl; updateHelper(h); scene.add(h); helpers[id]=h;
   });
 }
 function updateHelper(h){
@@ -173,7 +198,8 @@ function initSliders(sz){
   const ranges={
     sagMin:[ sx,-sx, sx], sagMax:[ sx,-sx,-sx],
     corMin:[ sy,-sy, sy], corMax:[ sy,-sy,-sy],
-    axMin :[ sz2,-sz2, sz2], axMax :[ sz2,-sz2,-sz2]
+    axMin :[ sz2,-sz2, sz2],
+    axMax :[ sz2,-sz2,-sz2]
   };
   Object.entries(ranges).forEach(([id,[hi,lo,val]])=>{
     const el=document.getElementById(id);
@@ -184,14 +210,14 @@ function initSliders(sz){
 function movePlane(id,v){
   const p=planes[id], n=p.normal;
   p.constant = n.x? -n.x*v : n.y? -n.y*v : -n.z*v;
-  helpers[id] && updateHelper(helpers[id]);
+  if(helpers[id]) updateHelper(helpers[id]);
 }
 
 /* ---------- UI bindings ---------- */
-let bgIndex=1; // start on white
+let bgIndex=1;
 function bindUI(){
   showWall .onchange=e=>wallMesh && (wallMesh.visible=e.target.checked);
-  showLumen.onchange=e=>lumenMesh&&(lumenMesh.visible=e.target.checked);
+  showLumen.onchange=e=>lumenMesh && (lumenMesh.visible=e.target.checked);
   showHelpers.onchange=e=>Object.values(helpers).forEach(h=>h.visible=e.target.checked);
   enableClip.onchange=e=>{
     const arr=e.target.checked?clipArray:[];         // global toggle
@@ -220,12 +246,11 @@ window.addEventListener('resize',()=>{
   renderer.setSize(innerWidth,innerHeight);
   camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
 });
-(function animate(){ requestAnimationFrame(animate);
-  controls.update(); renderer.render(scene,camera); })();
+(function animate(){
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene,camera);
+})();
 </script>
 </body>
 </html>
-
-
-
-
