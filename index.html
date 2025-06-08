@@ -5,28 +5,26 @@
 <title>Sophia – Heart Viewer</title>
 <style>
   body{margin:0;overflow:hidden;font:14px/1 Arial,Helvetica,sans-serif}
-  #ui{
-    position:fixed;top:10px;left:10px;z-index:10;
-    background:rgba(255,255,255,.92);padding:12px;border-radius:6px;
-  }
+  #ui{position:fixed;top:10px;left:10px;z-index:10;
+      background:rgba(255,255,255,.92);padding:12px;border-radius:6px;}
   #ui label{display:block;margin-bottom:4px}
   #ui input[type=range]{width:160px}
-  #info{
-    position:fixed;bottom:10px;left:10px;right:10px;z-index:10;
-    background:rgba(255,255,255,.9);padding:10px;border-radius:6px;
-    max-width:420px;
-  }
+  #info{position:fixed;bottom:10px;left:10px;right:10px;z-index:10;
+        background:rgba(255,255,255,.9);padding:10px;border-radius:6px;
+        max-width:420px;}
   #info h4{margin:0 0 6px 0}
 </style>
 
-<!-- ① Added GLTFLoader to import-map -->
+<!-- Import map with GLTFLoader -->
 <script type="importmap">
-{ "imports": {
-    "three"      : "https://cdn.jsdelivr.net/npm/three@0.148.0/build/three.module.js",
-    "OBJLoader"  : "https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/loaders/OBJLoader.js",
-    "MTLLoader"  : "https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/loaders/MTLLoader.js",
-    "GLTFLoader" : "https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/loaders/GLTFLoader.js"
-} }
+{
+  "imports": {
+    "three"         : "https://cdn.jsdelivr.net/npm/three@0.148.0/build/three.module.js",
+    "GLTFLoader"    : "https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/loaders/GLTFLoader.js",
+    "STLLoader"     : "https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/loaders/STLLoader.js",
+    "OrbitControls" : "https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/controls/OrbitControls.js"
+  }
+}
 </script>
 </head>
 <body>
@@ -53,31 +51,22 @@
 <!-- Info panel (unchanged) -->
 <div id="info">
   <h4>Sophia’s heart (age 1, cardiac CT)</h4>
-  <p><strong>Blue lumen</strong> shows the negative space inside the
-  chambers and vessels.<br>
-  <strong>Red wall</strong> renders only the inner &amp; outer shells of the
-  myocardium (solid tissue between shells is not displayed).</p>
-
+  <p><strong>Blue lumen</strong> shows the negative space inside the chambers and vessels.<br>
+     <strong>Red wall</strong> renders only the inner &amp; outer shells of the myocardium (solid tissue between shells is not displayed).</p>
   <p><em>Recommended workflow for surgical planning</em>:</p>
   <ol style="margin-left:16px">
     <li>Toggle <strong>off</strong> the heart wall.</li>
-    <li>Slice through the lumen (axial/ coronal/ sagittal)
-        with the sliders.</li>
-    <li>Keep lighting off and set lumen opacity to&nbsp;≈ 25 % for a
-        clear overview of all chambers at once.</li>
+    <li>Slice through the lumen (axial, coronal, sagittal) with the sliders.</li>
+    <li>Keep lighting off and set lumen opacity to ≈25 % for a clear overview of all chambers at once.</li>
   </ol>
 </div>
 
 <script type="module">
 /* ---------- imports ---------- */
 import * as THREE from 'three';
-import { OrbitControls } from
-  'https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/controls/OrbitControls.js';
-import { STLLoader }   from
-  'https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/loaders/STLLoader.js';
-import { GLTFLoader }  from 'GLTFLoader';   // ② new import
-import { MTLLoader }   from 'MTLLoader';    // still here if ever needed
-import { OBJLoader }   from 'OBJLoader';    // retained but no longer used
+import { OrbitControls } from 'OrbitControls';
+import { STLLoader   } from 'STLLoader';
+import { GLTFLoader  } from 'GLTFLoader';
 
 /* ---------- scene / renderer ---------- */
 const scene = new THREE.Scene(); scene.background = new THREE.Color(0xffffff);
@@ -107,7 +96,7 @@ renderer.clippingPlanes = clipArray;
 
 /* ---------- light ---------- */
 const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-dirLight.visible = false;                     // lighting off by default
+dirLight.visible = false;                         // lighting off by default
 scene.add(dirLight);
 
 /* ---------- materials ---------- */
@@ -125,27 +114,25 @@ new STLLoader().load('Segmentation_Sophia_1yr_old_lumen.bin', geo=>{
   ({scaleFactor,centre} = normalise(geo));
   lumenMesh = new THREE.Mesh(geo, matLumen);
   scene.add(lumenMesh);
-  loadWall();
+  loadWall();                                     // now loads .glb
 });
 
-/* ③ loadWall now uses GLTFLoader and the .glb file */
 function loadWall(){
-  const loader = new GLTFLoader();
-  loader.load('Segmentation_Sophia_1yr_old_HeartWall.glb', gltf=>{
+  new GLTFLoader().load('Segmentation_Sophia_1yr_old_HeartWall.glb', gltf=>{
     wallMesh = gltf.scene;
 
-    /* normalise to match lumen */
+    /* match lumen transform */
     wallMesh.scale.set(scaleFactor, scaleFactor, scaleFactor);
     wallMesh.position.set(-centre.x, -centre.y, -centre.z);
 
-    /* enforce shared material */
+    /* apply shared red material */
     wallMesh.traverse(c=>{
       if (c.isMesh) c.material = matWall;
     });
 
-    wallMesh.visible = false;   // hidden by default
+    wallMesh.visible = false;                     // hidden by default
     scene.add(wallMesh);
-    initScene();                // continue with helpers & UI
+    initScene();
   });
 }
 
@@ -209,14 +196,14 @@ function movePlane(id,v){
   helpers[id] && updateHelper(helpers[id]);
 }
 
-/* ---------- UI bindings (unchanged) ---------- */
+/* ---------- UI bindings ---------- */
 let bgIndex=1; // start on white
 function bindUI(){
   showWall .onchange=e=>wallMesh && (wallMesh.visible=e.target.checked);
   showLumen.onchange=e=>lumenMesh&&(lumenMesh.visible=e.target.checked);
   showHelpers.onchange=e=>Object.values(helpers).forEach(h=>h.visible=e.target.checked);
   enableClip.onchange=e=>{
-    const arr=e.target.checked?clipArray:[];
+    const arr=e.target.checked?clipArray:[];         // global toggle
     matWall.clippingPlanes=matLumen.clippingPlanes=arr;
     matWall.needsUpdate=matLumen.needsUpdate=true;
   };
@@ -237,7 +224,7 @@ function updateLightDir(){
   dirLight.lookAt(0,0,0);
 }
 
-/* ---------- resize + render loop ---------- */
+/* ---------- resize + render ---------- */
 window.addEventListener('resize',()=>{
   renderer.setSize(innerWidth,innerHeight);
   camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
@@ -247,6 +234,7 @@ window.addEventListener('resize',()=>{
 </script>
 </body>
 </html>
+
 
 
 
