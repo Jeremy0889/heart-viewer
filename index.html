@@ -118,7 +118,7 @@ const matLumen = new THREE.MeshStandardMaterial({ ...shared, color:0x4fa7ff, opa
 const TARGET = 100;
 let lumenMesh, wallMesh, scaleFactor, centre;
 
-new STLLoader().load('Segmentation_Sophia_1yr_old_lumen.stl', geo=>{
+new STLLoader().load('Segmentation_Sophia_1yr_old_lumen.bin', geo=>{
   ({scaleFactor,centre} = normalise(geo));
   lumenMesh = new THREE.Mesh(geo, matLumen);
   scene.add(lumenMesh);
