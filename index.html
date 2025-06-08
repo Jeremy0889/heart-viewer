@@ -6,45 +6,49 @@
 <style>
   body{margin:0;overflow:hidden;font:14px/1 Arial,Helvetica,sans-serif}
 
-  /* ── control panel occupies top 30 % ──────────────────────────── */
+  /* ── transparent control panel (top 30 % of screen) ───────────── */
   #ui{
-    position:fixed;top:0;left:0;width:100%;height:30vh;overflow-y:auto;
-    z-index:10;background:rgba(255,255,255,.95);
+    position:fixed;top:0;left:0;width:100%;height:30vh;
+    overflow-y:auto;z-index:10;
+    background:transparent;               /* fully transparent */
     padding:12px 14px;border-bottom:1px solid #ccc;
-    display:flex;flex-wrap:wrap;align-content:flex-start;gap:10px 12px;
+    display:flex;flex-wrap:wrap;align-content:flex-start;
+    gap:18px 18px;                        /* 50 % more spacing */
+    color:#000;
   }
   #ui label{
     display:flex;align-items:center;gap:8px;
-    margin:0;flex:1 1 48%; /* two columns on phone */
+    margin:0;flex:1 1 48%;
   }
   #ui input[type=range]{
-    width:100%;height:28px; /* bigger thumb */
+    width:25%;            /* 75 % shorter */
+    height:42px;          /* 150 % thicker */
   }
   #ui button{padding:6px 10px}
 
-  /* ── info panel unchanged ─────────────────────────────────────── */
+  /* ── info panel ──────────────────────────────────────────────── */
   #info{
     position:fixed;bottom:10px;left:10px;right:10px;z-index:10;
     background:rgba(255,255,255,.9);padding:10px;border-radius:6px;
-    max-width:420px;
+    max-width:420px;transition:opacity .2s;
   }
+  #info.hidden{opacity:0;pointer-events:none;}
   #info h4{margin:0 0 6px 0}
 </style>
 
-<!-- Import map -->
 <script type="importmap">
 {
   "imports": {
-    "three"         : "https://cdn.jsdelivr.net/npm/three@0.148.0/build/three.module.js",
-    "STLLoader"     : "https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/loaders/STLLoader.js",
-    "OrbitControls" : "https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/controls/OrbitControls.js"
+    "three": "https://cdn.jsdelivr.net/npm/three@0.148.0/build/three.module.js",
+    "STLLoader": "https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/loaders/STLLoader.js",
+    "OrbitControls": "https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/controls/OrbitControls.js"
   }
 }
 </script>
 </head>
 <body>
 
-<!-- Controls (layout improved) -->
+<!-- Controls -->
 <div id="ui">
   <button id="bgBtn">BG: white</button>
   <label><input id="showWall"   type="checkbox"> Show heart wall</label>
@@ -69,9 +73,12 @@
   <label>Coronal Max   <input type="range" id="corMax"></label>
   <label>Sagittal Min  <input type="range" id="sagMin"></label>
   <label>Sagittal Max  <input type="range" id="sagMax"></label>
+
+  <!-- new toggle -->
+  <label><input id="showInfo" type="checkbox" checked> Show instructions</label>
 </div>
 
-<!-- Info panel (unchanged) -->
+<!-- Info panel -->
 <div id="info">
   <h4>Sophia’s heart (age 1, cardiac CT)</h4>
   <p><strong>Blue lumen</strong> shows the negative space inside the chambers and vessels.<br>
@@ -118,8 +125,7 @@ renderer.clippingPlanes = clipArray;
 
 /* ---------- light ---------- */
 const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-dirLight.visible = false;
-scene.add(dirLight);
+dirLight.visible = false; scene.add(dirLight);
 
 /* ---------- materials ---------- */
 const shared = { roughness:1, metalness:0, side:THREE.DoubleSide,
@@ -129,7 +135,7 @@ const matWall  = new THREE.MeshStandardMaterial({ ...shared, color:0xc23b22, opa
 const matLumen = new THREE.MeshStandardMaterial({ ...shared, color:0x4fa7ff, opacity:0.25, depthWrite:false });
 
 /* ---------- load meshes ---------- */
-const TARGET = 100;
+const TARGET=100;
 let lumenMesh, wallMesh, scaleFactor, centre;
 
 new STLLoader().load('Segmentation_Sophia_1yr_old_lumen.bin', geo=>{
@@ -138,22 +144,19 @@ new STLLoader().load('Segmentation_Sophia_1yr_old_lumen.bin', geo=>{
   scene.add(lumenMesh);
   loadWall();
 });
-
 function loadWall(){
   new STLLoader().load('Segmentation_Sophia_1yr_old_HeartWall_decimated.bin', geo=>{
-    geo.scale(scaleFactor, scaleFactor, scaleFactor);
-    geo.translate(-centre.x, -centre.y, -centre.z);
+    geo.scale(scaleFactor,scaleFactor,scaleFactor);
+    geo.translate(-centre.x,-centre.y,-centre.z);
     wallMesh = new THREE.Mesh(geo, matWall);
-    wallMesh.visible = false;
-    scene.add(wallMesh);
+    wallMesh.visible = false; scene.add(wallMesh);
     initScene();
   });
 }
-
 function normalise(geo){
   geo.computeBoundingBox();
   const s=geo.boundingBox.getSize(new THREE.Vector3());
-  const factor = TARGET / Math.max(s.x,s.y,s.z);
+  const factor=TARGET/Math.max(s.x,s.y,s.z);
   geo.scale(factor,factor,factor);
   geo.computeBoundingBox();
   const c=geo.boundingBox.getCenter(new THREE.Vector3());
@@ -169,18 +172,17 @@ function initScene(){
   const bbox=new THREE.Box3().expandByObject(wallMesh).expandByObject(lumenMesh);
   const size=bbox.getSize(new THREE.Vector3());
   frameCamera(size); createHelpers(size); initSliders(size); bindUI();
-  /* sync helpers to checkbox state */
-  Object.values(helpers).forEach(h => h.visible = showHelpers.checked);
+  Object.values(helpers).forEach(h=>h.visible=showHelpers.checked);
 }
-function frameCamera(sizeVec){
-  const R=Math.hypot(sizeVec.x,sizeVec.y,sizeVec.z)/2;
+function frameCamera(s){
+  const R=Math.hypot(s.x,s.y,s.z)/2;
   camera.position.set(0,0,R*2.5);
   controls.target.set(0,0,0);
   controls.minDistance=R*0.4; controls.maxDistance=R*6; controls.update();
   updateLightDir();
 }
-function createHelpers(sizeVec){
-  const len=Math.hypot(sizeVec.x,sizeVec.y,sizeVec.z)*0.8;
+function createHelpers(s){
+  const len=Math.hypot(s.x,s.y,s.z)*0.8;
   Object.entries(planes).forEach(([id,pl])=>{
     const h=new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.PlaneGeometry(len,len)),
@@ -198,8 +200,7 @@ function initSliders(sz){
   const ranges={
     sagMin:[ sx,-sx, sx], sagMax:[ sx,-sx,-sx],
     corMin:[ sy,-sy, sy], corMax:[ sy,-sy,-sy],
-    axMin :[ sz2,-sz2, sz2],
-    axMax :[ sz2,-sz2,-sz2]
+    axMin :[ sz2,-sz2, sz2], axMax:[ sz2,-sz2,-sz2]
   };
   Object.entries(ranges).forEach(([id,[hi,lo,val]])=>{
     const el=document.getElementById(id);
@@ -213,19 +214,18 @@ function movePlane(id,v){
   if(helpers[id]) updateHelper(helpers[id]);
 }
 
-/* ---------- UI bindings ---------- */
+/* ---------- UI ---------- */
 let bgIndex=1;
 function bindUI(){
   showWall .onchange=e=>wallMesh && (wallMesh.visible=e.target.checked);
-  showLumen.onchange=e=>lumenMesh && (lumenMesh.visible=e.target.checked);
+  showLumen.onchange=e=>lumenMesh&&(lumenMesh.visible=e.target.checked);
   showHelpers.onchange=e=>Object.values(helpers).forEach(h=>h.visible=e.target.checked);
   enableClip.onchange=e=>{
-    const arr=e.target.checked?clipArray:[];         // global toggle
-    matWall.clippingPlanes=matLumen.clippingPlanes=arr;
+    const arr=e.target.checked?clipArray:[]; matWall.clippingPlanes=matLumen.clippingPlanes=arr;
     matWall.needsUpdate=matLumen.needsUpdate=true;
   };
   enableLight.onchange=e=>dirLight.visible=e.target.checked;
-  opacity .oninput=e=>{matLumen.opacity=parseFloat(e.target.value);matLumen.needsUpdate=true;}
+  opacity .oninput=e=>{matLumen.opacity=parseFloat(e.target.value); matLumen.needsUpdate=true;}
   lightInt.oninput=e=>{dirLight.intensity=parseFloat(e.target.value);}
   lightDir.oninput=e=>updateLightDir();
   bgBtn.onclick=()=>{
@@ -233,10 +233,14 @@ function bindUI(){
     bgIndex=(bgIndex+1)%3; scene.background.setHex(col[bgIndex]);
     bgBtn.textContent=`BG: ${name[bgIndex]}`;
   };
+  /* new info toggle */
+  showInfo.onchange=e=>{
+    info.classList.toggle('hidden', !e.target.checked);
+  };
 }
 function updateLightDir(){
-  const deg=parseFloat(lightDir.value), rad=THREE.MathUtils.degToRad(deg);
-  const r=camera.position.length();
+  const deg=parseFloat(lightDir.value), rad=THREE.MathUtils.degToRad(deg),
+        r=camera.position.length();
   dirLight.position.set(Math.cos(rad)*r,Math.sin(rad)*r,r);
   dirLight.lookAt(0,0,0);
 }
