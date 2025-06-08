@@ -19,17 +19,19 @@
   #info h4{margin:0 0 6px 0}
 </style>
 
+<!-- ① Added GLTFLoader to import-map -->
 <script type="importmap">
 { "imports": {
-    "three"     : "https://cdn.jsdelivr.net/npm/three@0.148.0/build/three.module.js",
-    "OBJLoader" : "https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/loaders/OBJLoader.js",
-    "MTLLoader" : "https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/loaders/MTLLoader.js"
+    "three"      : "https://cdn.jsdelivr.net/npm/three@0.148.0/build/three.module.js",
+    "OBJLoader"  : "https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/loaders/OBJLoader.js",
+    "MTLLoader"  : "https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/loaders/MTLLoader.js",
+    "GLTFLoader" : "https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/loaders/GLTFLoader.js"
 } }
 </script>
 </head>
 <body>
 
-<!-- Controls -->
+<!-- Controls (unchanged) -->
 <div id="ui">
   <button id="bgBtn">BG: white</button>
   <label><input id="showWall"   type="checkbox"> Show heart wall</label>
@@ -48,7 +50,7 @@
   <label>Sagittal Max<input type="range" id="sagMax"></label>
 </div>
 
-<!-- Comment / instructions -->
+<!-- Info panel (unchanged) -->
 <div id="info">
   <h4>Sophia’s heart (age 1, cardiac CT)</h4>
   <p><strong>Blue lumen</strong> shows the negative space inside the
@@ -61,7 +63,7 @@
     <li>Toggle <strong>off</strong> the heart wall.</li>
     <li>Slice through the lumen (axial/ coronal/ sagittal)
         with the sliders.</li>
-    <li>Keep lighting off and set lumen opacity to&nbsp;≈ 25&nbsp;% for a
+    <li>Keep lighting off and set lumen opacity to&nbsp;≈ 25 % for a
         clear overview of all chambers at once.</li>
   </ol>
 </div>
@@ -71,10 +73,11 @@
 import * as THREE from 'three';
 import { OrbitControls } from
   'https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/controls/OrbitControls.js';
-import { STLLoader } from
+import { STLLoader }   from
   'https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/loaders/STLLoader.js';
-import { MTLLoader } from 'MTLLoader';
-import { OBJLoader } from 'OBJLoader';
+import { GLTFLoader }  from 'GLTFLoader';   // ② new import
+import { MTLLoader }   from 'MTLLoader';    // still here if ever needed
+import { OBJLoader }   from 'OBJLoader';    // retained but no longer used
 
 /* ---------- scene / renderer ---------- */
 const scene = new THREE.Scene(); scene.background = new THREE.Color(0xffffff);
@@ -124,23 +127,28 @@ new STLLoader().load('Segmentation_Sophia_1yr_old_lumen.bin', geo=>{
   scene.add(lumenMesh);
   loadWall();
 });
+
+/* ③ loadWall now uses GLTFLoader and the .glb file */
 function loadWall(){
-  new MTLLoader().load('Segmentation_Sophia_1yr_old_HeartWall.mtl', m=>{
-    m.preload();
-    new OBJLoader().setMaterials(m).load('Segmentation_Sophia_1yr_old_HeartWall.obj', obj=>{
-      obj.traverse(c=>{
-        if(c.isMesh){
-          c.geometry.scale(scaleFactor,scaleFactor,scaleFactor);
-          c.geometry.translate(-centre.x,-centre.y,-centre.z);
-          c.material = matWall;
-        }
-      });
-      wallMesh = obj; wallMesh.visible = false; // hidden by default
-      scene.add(wallMesh);
-      initScene();
+  const loader = new GLTFLoader();
+  loader.load('Segmentation_Sophia_1yr_old_HeartWall.glb', gltf=>{
+    wallMesh = gltf.scene;
+
+    /* normalise to match lumen */
+    wallMesh.scale.set(scaleFactor, scaleFactor, scaleFactor);
+    wallMesh.position.set(-centre.x, -centre.y, -centre.z);
+
+    /* enforce shared material */
+    wallMesh.traverse(c=>{
+      if (c.isMesh) c.material = matWall;
     });
+
+    wallMesh.visible = false;   // hidden by default
+    scene.add(wallMesh);
+    initScene();                // continue with helpers & UI
   });
 }
+
 function normalise(geo){
   geo.computeBoundingBox();
   const s=geo.boundingBox.getSize(new THREE.Vector3());
@@ -152,7 +160,7 @@ function normalise(geo){
   return {scaleFactor:factor, centre:c};
 }
 
-/* ---------- helpers, sliders, UI ---------- */
+/* ---------- helpers, sliders, UI (unchanged) ---------- */
 const helpers={}, helperColor={axMin:0xff3333,axMax:0xff9999,
                                corMin:0x33ff33,corMax:0x99ff99,
                                sagMin:0x3333ff,sagMax:0x9999ff};
@@ -201,8 +209,8 @@ function movePlane(id,v){
   helpers[id] && updateHelper(helpers[id]);
 }
 
-/* ---------- UI ---------- */
-let bgIndex=1;  // 0:red,1:white,2:black (start white)
+/* ---------- UI bindings (unchanged) ---------- */
+let bgIndex=1; // start on white
 function bindUI(){
   showWall .onchange=e=>wallMesh && (wallMesh.visible=e.target.checked);
   showLumen.onchange=e=>lumenMesh&&(lumenMesh.visible=e.target.checked);
@@ -229,7 +237,7 @@ function updateLightDir(){
   dirLight.lookAt(0,0,0);
 }
 
-/* ---------- resize + render ---------- */
+/* ---------- resize + render loop ---------- */
 window.addEventListener('resize',()=>{
   renderer.setSize(innerWidth,innerHeight);
   camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
@@ -239,5 +247,6 @@ window.addEventListener('resize',()=>{
 </script>
 </body>
 </html>
+
 
 
