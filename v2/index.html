@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sophia – Heart Viewer (v2)</title>
+
+<!-- ---- basic styles / existing UI layout ------------------ -->
+<style>
+  body{margin:0;overflow:hidden;font:14px/1 Arial,Helvetica,sans-serif}
+  #ui{
+    position:fixed;top:0;left:0;width:100%;height:30vh;
+    overflow-y:auto;z-index:10;background:transparent;
+    padding:12px 14px;border-bottom:1px solid #ccc;
+    display:flex;flex-wrap:wrap;align-content:flex-start;gap:18px 18px;
+    color:#000;
+  }
+  #ui label{display:flex;align-items:center;gap:8px;margin:0;flex:1 1 48%;}
+  #ui input[type=range]{width:25%;height:42px}
+  #ui button{padding:6px 10px}
+  #info{
+    position:fixed;bottom:10px;left:10px;right:10px;z-index:10;
+    background:rgba(255,255,255,.9);padding:10px;border-radius:6px;
+    max-width:420px;transition:opacity .2s;
+  }
+  #info.hidden{opacity:0;pointer-events:none;}
+  #info h4{margin:0 0 6px 0}
+</style>
+
+<!-- ---- import map (same library versions you used before) ---- -->
+<script type="importmap">
+{
+  "imports": {
+    "three"         : "https://cdn.jsdelivr.net/npm/three@0.148.0/build/three.module.js",
+    "STLLoader"     : "https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/loaders/STLLoader.js",
+    "OrbitControls" : "https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/controls/OrbitControls.js"
+  }
+}
+</script>
+</head>
+<body>
+
+<!-- ---- existing UI / controls (unchanged) ---- -->
+<div id="ui">
+  <button id="bgBtn">BG: white</button>
+  <label><input id="showWall"    type="checkbox"> Show heart wall</label>
+  <label><input id="showLumen"   type="checkbox" checked> Show all lumen</label>
+  <label><input id="showHelpers" type="checkbox"> Show slice helpers</label>
+  <label><input id="enableClip"  type="checkbox" checked> Enable clipping</label>
+  <label><input id="enableLight" type="checkbox"> Lighting on</label>
+
+  <label>Lumen opacity
+    <input type="range" id="opacity" min="0" max="1" step="0.01" value="0.35">
+  </label>
+  <label>Light intensity
+    <input type="range" id="lightInt" min="0" max="2" step="0.05" value="0.8">
+  </label>
+  <label>Light direction
+    <input type="range" id="lightDir" min="0" max="360" step="1" value="45">
+  </label>
+
+  <label>Axial Min     <input type="range" id="axMin"></label>
+  <label>Axial Max     <input type="range" id="axMax"></label>
+  <label>Coronal Min   <input type="range" id="corMin"></label>
+  <label>Coronal Max   <input type="range" id="corMax"></label>
+  <label>Sagittal Min  <input type="range" id="sagMin"></label>
+  <label>Sagittal Max  <input type="range" id="sagMax"></label>
+
+  <label><input id="showInfo" type="checkbox" checked> Show instructions</label>
+</div>
+
+<!-- info panel (unchanged) -->
+<div id="info">
+  <h4>Sophia’s heart (age 1, cardiac CT)</h4>
+  <p><strong>Transparent lumen</strong> meshes are independently toggleable.<br>
+     <strong>Red wall</strong> shows myocardium shells (no interior fill).</p>
+  <p><em>Workflow:</em></p>
+  <ol style="margin-left:16px">
+    <li>Toggle components as needed.</li>
+    <li>Slice with sliders to inspect specific planes.</li>
+    <li>Adjust lumen opacity for overview vs detail.</li>
+  </ol>
+</div>
+
+<script type="module">
+/* ---------- imports ---------- */
+import * as THREE      from 'three';
+import { OrbitControls } from 'OrbitControls';
+import { STLLoader     } from 'STLLoader';
+
+/* ---------- scene / renderer ---------- */
+const scene   = new THREE.Scene(); scene.background = new THREE.Color(0xffffff);
+const camera  = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 5000);
+camera.up.set(0,0,1);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true, stencil:true });
+renderer.setSize(innerWidth,innerHeight);
+renderer.localClippingEnabled = true;
+document.body.appendChild(renderer.domElement);
+
+/* ---------- controls ---------- */
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+/* ---------- clipping planes ---------- */
+const planes = {
+  axMin : new THREE.Plane(new THREE.Vector3( 0, 0,-1), 0),
+  axMax : new THREE.Plane(new THREE.Vector3( 0, 0, 1), 0),
+  corMin: new THREE.Plane(new THREE.Vector3( 0,-1, 0), 0),
+  corMax: new THREE.Plane(new THREE.Vector3( 0, 1, 0), 0),
+  sagMin: new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0),
+  sagMax: new THREE.Plane(new THREE.Vector3( 1, 0, 0), 0)
+};
+const clipArray = Object.values(planes);
+renderer.clippingPlanes = clipArray;
+
+/* ---------- light ---------- */
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.visible = false; scene.add(dirLight);
+
+/* ---------- shared material settings ---------- */
+const shared = {
+  roughness:1, metalness:0, side:THREE.DoubleSide,
+  transparent:true, clipIntersection:true,
+  clippingPlanes:clipArray
+};
+
+/* ---------- global refs ---------- */
+let wallMesh, scaleFactor, centre;
+const lumenMeshes     = [];   // all lumen meshes
+const lumenMaterials  = [];   // their materials (for opacity slider)
+
+/* ---------- model list ---------- */
+const MODELS = [
+  /* wall first – we normalise scene to it */
+  { name:'Heart Wall', file:'heart_wall.bin', color:0xc23b22, opacity:0.9, isWall:true },
+
+  /* lumen components */
+  { name:'Left Ventricle'  , file:'Left Ventrical.bin'   , color:0x2194ce },
+  { name:'Right Ventricle' , file:'Right Ventrical.bin'  , color:0xff9800 },
+  { name:'Left Atrium'     , file:'Left Atrium.bin'      , color:0x009688 },
+  { name:'Right Atrium'    , file:'Right Atrium.bin'     , color:0x9c27b0 },
+  { name:'Aorta'           , file:'Aorta.bin'            , color:0xf44336 },
+  { name:'Pulmonary Artery', file:'Pulmonary Artery.bin' , color:0x3f51b5 },
+  { name:'Vena Cava'       , file:'Vena Cava.bin'        , color:0x795548 }
+];
+
+/* ---------- load models ---------- */
+const loader = new STLLoader();
+const TARGET = 100;  // mm box for normalisation
+
+// first load the wall, normalise scene, then load lumens
+loader.load(MODELS[0].file, geo=>{
+  ({scaleFactor,centre} = normalise(geo));
+  const mat = new THREE.MeshStandardMaterial({ ...shared, color:MODELS[0].color, opacity:MODELS[0].opacity });
+  wallMesh  = new THREE.Mesh(geo, mat); wallMesh.visible = false;
+  scene.add(wallMesh);
+  loadLumens();          // now bring in the rest
+}, undefined, err=>console.error('Wall load error:',err));
+
+function loadLumens(){
+  MODELS.slice(1).forEach(({name,file,color})=>{
+    loader.load(file, geo=>{
+      geo.scale(scaleFactor,scaleFactor,scaleFactor);
+      geo.translate(-centre.x,-centre.y,-centre.z);
+      const mat = new THREE.MeshStandardMaterial({ ...shared, color, opacity:parseFloat(opacity.value), depthWrite:false });
+      const mesh = new THREE.Mesh(geo, mat);
+      scene.add(mesh);
+      lumenMeshes.push(mesh);
+      lumenMaterials.push(mat);
+
+      // add toggle to GUI panel using existing helpers UI style
+      addToggleRow(name, mesh);
+      if(lumenMeshes.length === MODELS.length-1) initScene();  // when last lumen arrives
+    });
+  });
+}
+
+/* ---------- helper: add a checkbox row to existing UI ---------- */
+function addToggleRow(labelText, mesh){
+  const label  = document.createElement('label');
+  const check  = document.createElement('input'); check.type='checkbox'; check.checked=true;
+  check.onchange = e=>mesh.visible = e.target.checked;
+  label.appendChild(check);
+  label.append(` ${labelText}`);
+  document.getElementById('ui').appendChild(label);
+}
+
+/* ---------- normalise (same logic you used before) ---------- */
+function normalise(geo){
+  geo.computeBoundingBox();
+  const s = geo.boundingBox.getSize(new THREE.Vector3());
+  const factor = TARGET / Math.max(s.x,s.y,s.z);
+  geo.scale(factor,factor,factor);
+  geo.computeBoundingBox();
+  const c = geo.boundingBox.getCenter(new THREE.Vector3());
+  geo.translate(-c.x,-c.y,-c.z);
+  return {scaleFactor:factor, centre:c};
+}
+
+/* ---------- after all models loaded ---------- */
+let helpers={}, helperColor={axMin:0xff3333,axMax:0xff9999,
+                             corMin:0x33ff33,corMax:0x99ff99,
+                             sagMin:0x3333ff,sagMax:0x9999ff};
+function initScene(){
+  const bbox = new THREE.Box3().expandByObject(wallMesh);
+  lumenMeshes.forEach(m=>bbox.expandByObject(m));
+  const size = bbox.getSize(new THREE.Vector3());
+  frameCamera(size); createHelpers(size); initSliders(size); bindUI();
+  Object.values(helpers).forEach(h=>h.visible = showHelpers.checked);
+}
+
+/* ---------- camera framing ---------- */
+function frameCamera(s){
+  const R = Math.hypot(s.x,s.y,s.z)/2;
+  camera.position.set(0,0,R*2.5);
+  controls.target.set(0,0,0);
+  controls.minDistance = R*0.4; controls.maxDistance = R*6;
+  controls.update();
+  updateLightDir();
+}
+
+/* ---------- clipping helpers ---------- */
+function createHelpers(s){
+  const len = Math.hypot(s.x,s.y,s.z)*0.8;
+  Object.entries(planes).forEach(([id,pl])=>{
+    const h = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.PlaneGeometry(len,len)),
+      new THREE.LineBasicMaterial({color:helperColor[id]}));
+    h.userData.pl = pl; updateHelper(h); scene.add(h); helpers[id]=h;
+  });
+}
+function updateHelper(h){
+  const p=h.userData.pl,n=p.normal;
+  h.position.copy(n).multiplyScalar(-p.constant);
+  h.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),n);
+}
+
+/* ---------- slider initialisation ---------- */
+function initSliders(sz){
+  const sx=sz.x/2, sy=sz.y/2, sz2=sz.z/2;
+  const ranges={
+    sagMin:[ sx,-sx, sx], sagMax:[ sx,-sx,-sx],
+    corMin:[ sy,-sy, sy], corMax:[ sy,-sy,-sy],
+    axMin :[ sz2,-sz2, sz2], axMax:[ sz2,-sz2,-sz2]
+  };
+  Object.entries(ranges).forEach(([id,[hi,lo,val]])=>{
+    const el=document.getElementById(id);
+    el.min=lo; el.max=hi; el.step=(hi-lo)/400; el.value=val;
+    movePlane(id,val); el.oninput=e=>movePlane(id,parseFloat(e.target.value));
+  });
+}
+function movePlane(id,v){
+  const p=planes[id], n=p.normal;
+  p.constant = n.x? -n.x*v : n.y? -n.y*v : -n.z*v;
+  if(helpers[id]) updateHelper(helpers[id]);
+}
+
+/* ---------- UI bindings (updated for multiple lumen meshes) ---------- */
+let bgIndex=1;
+function bindUI(){
+  showWall .onchange=e=>wallMesh && (wallMesh.visible=e.target.checked);
+  showLumen.onchange=e=>lumenMeshes.forEach(m=>m.visible=e.target.checked);
+  showHelpers.onchange=e=>Object.values(helpers).forEach(h=>h.visible=e.target.checked);
+  enableClip.onchange=e=>{
+    const arr=e.target.checked?clipArray:[];
+    wallMesh.material.clippingPlanes = arr;
+    lumenMaterials.forEach(mat=>mat.clippingPlanes = arr);
+  };
+  enableLight.onchange=e=>dirLight.visible=e.target.checked;
+
+  opacity.oninput=e=>{
+    const v=parseFloat(e.target.value);
+    lumenMaterials.forEach(mat=>{
+      mat.opacity = v;
+      mat.transparent = v<1;
+      mat.needsUpdate = true;
+    });
+  };
+  lightInt.oninput=e=>{dirLight.intensity=parseFloat(e.target.value);};
+  lightDir.oninput=e=>updateLightDir();
+
+  bgBtn.onclick=()=>{
+    const col=[0xc23b22,0xffffff,0x000000], name=['red','white','black'];
+    bgIndex=(bgIndex+1)%3; scene.background.setHex(col[bgIndex]);
+    bgBtn.textContent=`BG: ${name[bgIndex]}`;
+  };
+  showInfo.onchange=e=>info.classList.toggle('hidden', !e.target.checked);
+}
+function updateLightDir(){
+  const deg=parseFloat(lightDir.value), rad=THREE.MathUtils.degToRad(deg),
+        r=camera.position.length();
+  dirLight.position.set(Math.cos(rad)*r,Math.sin(rad)*r,r);
+  dirLight.lookAt(0,0,0);
+}
+
+/* ---------- resize + render ---------- */
+window.addEventListener('resize',()=>{
+  renderer.setSize(innerWidth,innerHeight);
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+});
+(function animate(){
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene,camera);
+})();
+</script>
+</body>
+</html>
